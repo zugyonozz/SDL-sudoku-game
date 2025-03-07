@@ -1,31 +1,32 @@
-# Compiler
+CC = gcc
 CXX = g++
+CFLAGS = -Wall -Iinclude
+CXXFLAGS = $(CFLAGS)
+LDFLAGS = -Llib -lSDL2 -lSDL2_image -lSDL2_ttf -mconsole
 
-# Direktori
-SDL_DIR = Src
-INCLUDE_DIR = $(SDL_DIR)/include/SDL2
-LIB_DIR = $(SDL_DIR)/lib
+SRC_C = src/sudoku_logic.c
+SRC_CPP = src/main.cpp src/sudoku_gui.cpp
+OBJ_C = $(SRC_C:.c=.o)
+OBJ_CPP = $(SRC_CPP:.cpp=.o)
 
-# Flags
-CXXFLAGS = -I$(INCLUDE_DIR) -Wall -Wextra
-LDFLAGS = -L$(LIB_DIR) -lmingw32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf
+BIN = bin/main.exe
 
-# Target
-TARGET = main.exe # File yang ingin telah di compile
-SRC = main.cpp # Sesuaikan nama file yang ingin di compile
-OBJ = $(SRC:.cpp=.o)
+all: $(BIN)
 
-all: $(TARGET)
+# Kompilasi file C
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
-$(TARGET): $(OBJ)
-	$(CXX) -o $(TARGET) $(OBJ) $(LDFLAGS)
-
+# Kompilasi file C++
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-clean:
-	rm -f $(OBJ) $(TARGET)
+# Link semua object files
+$(BIN): $(OBJ_C) $(OBJ_CPP)
+	$(CXX) $(OBJ_C) $(OBJ_CPP) -o $(BIN) $(LDFLAGS)
 
-run: all
-	rm -f $(OBJ)
-	./$(TARGET)
+run: $(BIN)
+	./$(BIN)
+
+clean:
+	rm -f src/*.o bin/main.exe
