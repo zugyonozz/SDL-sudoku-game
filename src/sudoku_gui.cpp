@@ -9,6 +9,73 @@ SDL_Window* window = nullptr;
 SDL_Renderer* renderer = nullptr;
 TTF_Font* font = nullptr;
 
+// Array to store pre-rendered textures:
+// [0-8]: Valid numbers (1-9) in black
+// [9-17]: Invalid numbers (1-9) in red
+FontTexture fontTextures[18];
+
+void initFontTextures() {
+    if (!font) {
+        printf("Font not loaded, cannot create textures!\n");
+        return;
+    }
+    
+    SDL_Color black = {0, 0, 0, 255};
+    SDL_Color red = {255, 0, 0, 255};
+    
+    // Create textures for each number (1-9) in both valid and invalid states
+    for (int i = 1; i <= 9; i++) {
+        char numText[2];
+        snprintf(numText, sizeof(numText), "%d", i);
+        
+        // Create valid (black) texture
+        SDL_Surface* validSurface = TTF_RenderText_Blended(font, numText, black);
+        if (!validSurface) {
+            printf("Unable to render valid text surface for %d! TTF_Error: %s\n", i, TTF_GetError());
+            continue;
+        }
+        
+        fontTextures[i-1].texture = SDL_CreateTextureFromSurface(renderer, validSurface);
+        fontTextures[i-1].width = validSurface->w;
+        fontTextures[i-1].height = validSurface->h;
+        
+        if (!fontTextures[i-1].texture) {
+            printf("Unable to create valid texture for %d! SDL_Error: %s\n", i, SDL_GetError());
+        }
+        
+        SDL_FreeSurface(validSurface);
+        
+        // Create invalid (red) texture
+        SDL_Surface* invalidSurface = TTF_RenderText_Solid(font, numText, red);
+        if (!invalidSurface) {
+            printf("Unable to render invalid text surface for %d! TTF_Error: %s\n", i, TTF_GetError());
+            continue;
+        }
+        
+        fontTextures[i+8].texture = SDL_CreateTextureFromSurface(renderer, invalidSurface);
+        fontTextures[i+8].width = invalidSurface->w;
+        fontTextures[i+8].height = invalidSurface->h;
+        
+        if (!fontTextures[i+8].texture) {
+            printf("Unable to create invalid texture for %d! SDL_Error: %s\n", i, SDL_GetError());
+        }
+        
+        SDL_FreeSurface(invalidSurface);
+    }
+    
+    printf("Font textures initialized successfully\n");
+}
+
+void destroyFontTextures() {
+    // Clean up all pre-rendered textures
+    for (int i = 0; i < 18; i++) {
+        if (fontTextures[i].texture) {
+            SDL_DestroyTexture(fontTextures[i].texture);
+            fontTextures[i].texture = nullptr;
+        }
+    }
+}
+
 void initSDL() {
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
@@ -32,7 +99,7 @@ void initSDL() {
         return;
     }
     
-    font = TTF_OpenFont("assets/fonts/NotoSans-Regular.ttf", 48);
+    font = TTF_OpenFont("assets/fonts/NotoSans-Regular.ttf", 24);
     if (!font) {
         printf("Failed to load font! TTF_Error: %s\n", TTF_GetError());
         // Fallback to Arial or any system font if available
@@ -44,6 +111,9 @@ void initSDL() {
             }
         }
     }
+    
+    // Initialize font textures after font is loaded
+    initFontTextures();
 }
 
 void renderGrid(int board[9][9], int selectedRow, int selectedCol) {
@@ -77,52 +147,57 @@ void renderGrid(int board[9][9], int selectedRow, int selectedCol) {
 }
 
 void renderFont(int board[9][9], int validity[9][9]) {
-    if (!font) {
-        printf("Font not loaded, cannot render text!\n");
-        return;
+    // Check if textures are initialized
+    if (!fontTextures[0].texture) {
+        printf("Font textures not initialized, initializing now...\n");
+        initFontTextures();
+        if (!fontTextures[0].texture) {
+            printf("Cannot render numbers without textures!\n");
+            return;
+        }
     }
-
-    SDL_Color black = {0, 0, 0, 255};
-    SDL_Color red = {255, 0, 0, 255};
 
     for (int row = 0; row < 9; row++) {
         for (int col = 0; col < 9; col++) {
-            if (board[row][col] != 0) {
-                char numText[2];
-                snprintf(numText, sizeof(numText), "%d", board[row][col]);
-
-                // Choose color based on whether the number is fixed or valid
-                SDL_Color color;
-                if (isFixed[row][col]) {
-                    color = black; // Original numbers are always black
+            int num = board[row][col];
+            if (num != 0) { // Skip empty cells
+                int textureIndex;
+                
+                // Determine which texture to use:
+                // Fixed numbers or valid user entries use black textures (0-8)
+                // Invalid user entries use red textures (9-17)
+                if (isFixed[row][col] || validity[row][col]) {
+                    textureIndex = num - 1; // Valid: 0-8 for numbers 1-9
                 } else {
-                    color = validity[row][col] ? black : red; // User numbers: black if valid, red if invalid
+                    textureIndex = num + 8; // Invalid: 9-17 for numbers 1-9
                 }
-
-                SDL_Surface* textSurface = TTF_RenderText_Solid(font, numText, color);
-                if (!textSurface) {
-                    printf("Unable to render text surface! TTF_Error: %s\n", TTF_GetError());
+                
+                // Ensure index is valid
+                if (textureIndex < 0 || textureIndex >= 18) {
+                    printf("Invalid texture index: %d\n", textureIndex);
                     continue;
                 }
                 
-                SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
-                if (!textTexture) {
-                    printf("Unable to create texture from rendered text! SDL_Error: %s\n", SDL_GetError());
-                    SDL_FreeSurface(textSurface);
-                    continue;
-                }
+                // Position the texture in the center of the cell
+                SDL_Rect destRect = {
+                    col * 50 + (50 - fontTextures[textureIndex].width) / 2,
+                    row * 50 + (50 - fontTextures[textureIndex].height) / 2,
+                    fontTextures[textureIndex].width,
+                    fontTextures[textureIndex].height
+                };
                 
-                SDL_Rect textRect = {col * 50 + 20, row * 50 + 10, textSurface->w, textSurface->h};
-                SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
-
-                SDL_FreeSurface(textSurface);
-                SDL_DestroyTexture(textTexture);
+                // Render the pre-created texture
+                SDL_RenderCopy(renderer, fontTextures[textureIndex].texture, NULL, &destRect);
             }
         }
     }
 }
 
 void destroySDL() {
+    // First destroy font textures
+    destroyFontTextures();
+    
+    // Then clean up SDL resources
     if (font) TTF_CloseFont(font);
     if (renderer) SDL_DestroyRenderer(renderer);
     if (window) SDL_DestroyWindow(window);
